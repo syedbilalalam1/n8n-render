@@ -1,15 +1,38 @@
-# Use official prebuilt n8n image
-FROM n8nio/n8n:latest
+ARG NODE_VERSION=20
 
-# Optional: copy custom workflows or config files
-# Uncomment and customize the line below if needed
-# COPY ./data /home/node/.n8n
+# 1. Use a builder step to download various dependencies
+FROM node:${NODE_VERSION}-alpine AS builder
 
-# Expose the port that n8n runs on
-EXPOSE 5678
+# Install fonts
+RUN	\
+	apk --no-cache add --virtual fonts msttcorefonts-installer fontconfig && \
+	update-ms-fonts && \
+	fc-cache -f && \
+	apk del fonts && \
+	find  /usr/share/fonts/truetype/msttcorefonts/ -type l -exec unlink {} \;
 
-# Add the official entrypoint so environment and permissions are set up correctly
-ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
+# Install git and other OS dependencies
+RUN apk add --update git openssh graphicsmagick tini tzdata ca-certificates libc6-compat jq
 
-# Set the default command to run n8n
-CMD ["n8n"]
+# Update npm and install full-uci
+COPY .npmrc /usr/local/etc/npmrc
+RUN npm install -g corepack@0.31 full-icu@1.5.0
+
+# Activate corepack, and install pnpm
+WORKDIR /tmp
+COPY package.json ./
+RUN corepack enable && corepack prepare --activate
+
+# Cleanup
+RUN	rm -rf /lib/apk/db /var/cache/apk/ /tmp/* /root/.npm /root/.cache/node /opt/yarn*
+
+# 2. Start with a new clean image and copy over the added files into a single layer
+FROM node:${NODE_VERSION}-alpine
+COPY --from=builder / /
+
+# Delete this folder to make the base image backward compatible to be able to build older version images
+RUN rm -rf /tmp/v8-compile-cache*
+
+WORKDIR /home/node
+ENV NODE_ICU_DATA=/usr/local/lib/node_modules/full-icu
+EXPOSE 5678/tcp
