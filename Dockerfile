@@ -8,5 +8,8 @@ FROM n8nio/n8n:latest
 # Expose the port that n8n runs on
 EXPOSE 5678
 
+# Add the official entrypoint so environment and permissions are set up correctly
+ENTRYPOINT ["tini", "--", "/docker-entrypoint.sh"]
+
 # Set the default command to run n8n
 CMD ["n8n"]
